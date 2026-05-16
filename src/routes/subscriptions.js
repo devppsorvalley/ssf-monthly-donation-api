@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
-const razorpay = require('../razorpayClient');
+const getRazorpayClient = require('../razorpayClient');
 const router = express.Router();
 
 const {
@@ -32,6 +32,7 @@ router.post('/plan', async (req, res, next) => {
       notes = {},
     } = req.body;
 
+    const razorpay = getRazorpayClient();
     const plan = await razorpay.plans.create({
       period: interval,
       interval: intervalCount,
@@ -82,6 +83,7 @@ router.post('/create', async (req, res, next) => {
       });
     }
 
+    const razorpay = getRazorpayClient();
     const customerRecord = await razorpay.customers.create({
       ...customer,
       notes: {
@@ -96,6 +98,7 @@ router.post('/create', async (req, res, next) => {
     const defaultAmount = Number(SUBSCRIPTION_AMOUNT) || requestedAmount;
 
     if (!effectivePlanId || requestedAmount !== defaultAmount) {
+      const razorpay = getRazorpayClient();
       const plan = await razorpay.plans.create({
         period: SUBSCRIPTION_INTERVAL || 'monthly',
         interval: Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
