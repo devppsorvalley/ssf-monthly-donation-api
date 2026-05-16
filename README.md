@@ -127,6 +127,29 @@ Redirect donor to Razorpay checkout
 - If you want to use Razorpay Payment Pages directly, the `/api/subscriptions/payment-page` endpoint can create a Razorpay payment page link.
 - For a real deployment, set up HTTPS and webhook handling for subscription events.
 
+## Railway deployment
+Railway supports automatic deployment from GitHub with free HTTPS.
+
+1. Sign up at https://railway.app and connect your GitHub account.
+2. Create a new Railway project and choose "Deploy from GitHub".
+3. Select the `devppsorvalley/ssf-monthly-donation-api` repository.
+4. Choose the `main` branch and set it to auto-deploy on each push.
+5. Railway will detect Node.js from `package.json`.
+6. Add the following environment variables in Railway project settings:
+   - `RAZORPAY_KEY_ID`
+   - `RAZORPAY_KEY_SECRET`
+   - `RAZORPAY_WEBHOOK_SECRET`
+   - optional: `RAZORPAY_PLAN_ID`
+7. If Railway asks for a start command, use:
+   ```bash
+   npm start
+   ```
+8. After deployment, Railway will provide a public HTTPS URL.
+9. Use the public URL in WordPress for the subscription page, e.g. `https://<railway-app>.railway.app/subscription.html`.
+10. Register the webhook URL in Razorpay as `https://<railway-app>.railway.app/api/subscriptions/webhook`.
+
+Railway automatically enables SSL for your app URL, so your hosted subscription page is served securely.
+
 ## Razorpay webhook setup
 1. Configure `RAZORPAY_WEBHOOK_SECRET` in your `.env` file.
 2. Expose the webhook endpoint from your hosted server:
