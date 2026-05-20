@@ -17,18 +17,65 @@ const {
   SUBSCRIPTION_DESCRIPTION,
 } = process.env;
 
+async function findExistingPlan(razorpay, amount, currency, interval, intervalCount) {
+  const response = await razorpay.plans.all({ count: 100, skip: 0 });
+  const plans = Array.isArray(response.items) ? response.items : response;
+
+  if (!Array.isArray(plans)) {
+    return null;
+  }
+
+  return plans.find((plan) => {
+    const item = plan.item || {};
+    return Number(item.amount) === Number(amount)
+      && String(item.currency || '').toUpperCase() === String(currency || '').toUpperCase()
+      && String(plan.period || '').toLowerCase() === String(interval || '').toLowerCase()
+      && Number(plan.interval) === Number(intervalCount);
+  }) || null;
+}
+
+async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, currency, interval, intervalCount, totalCount, customer }) {
+  if (planId && Number(requestedAmount) === Number(defaultAmount)) {
+    return planId;
+  }
+
+  const razorpay = getRazorpayClient();
+  const existingPlan = await findExistingPlan(razorpay, requestedAmount, currency, interval, intervalCount);
+  if (existingPlan) {
+    return existingPlan.id;
+  }
+
+  const plan = await razorpay.plans.create({
+    period: interval,
+    interval: intervalCount,
+    item: {
+      name: 'SSF Donation',
+      amount: requestedAmount,
+      currency,
+      description: SUBSCRIPTION_DESCRIPTION || 'SSF monthly donation plan',
+    },
+    notes: {
+      donor_pan: customer.pan,
+      donor_email: customer.email,
+    },
+    total_count: totalCount,
+  });
+
+  return plan.id;
+}
+
 // Create a reusable plan for subscriptions.
 // Use this once, then save the returned plan_id in RAZORPAY_PLAN_ID.
 router.post('/plan', async (req, res, next) => {
   try {
     const {
-      planName = 'SSF Monthly Donation',
-      amount = Number(SUBSCRIPTION_AMOUNT) || 10000,
+      planName = 'SSF Monthly Donation 500',
+      amount = Number(SUBSCRIPTION_AMOUNT) || 500,
       currency = SUBSCRIPTION_CURRENCY || 'INR',
       interval = SUBSCRIPTION_INTERVAL || 'monthly',
       intervalCount = Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
-      totalCount = Number(SUBSCRIPTION_TOTAL_COUNT) || 12,
-      description = SUBSCRIPTION_DESCRIPTION || 'SSF monthly donation plan',
+      totalCount = Number(SUBSCRIPTION_TOTAL_COUNT) || 24,
+      description = SUBSCRIPTION_DESCRIPTION || 'SSF monthly donation plan 500',
       notes = {},
     } = req.body;
 
@@ -93,30 +140,18 @@ router.post('/create', async (req, res, next) => {
       fail_existing: '0',
     });
 
-    let effectivePlanId = planId || RAZORPAY_PLAN_ID;
     const requestedAmount = Number(amount);
     const defaultAmount = Number(SUBSCRIPTION_AMOUNT) || requestedAmount;
-
-    if (!effectivePlanId || requestedAmount !== defaultAmount) {
-      const razorpay = getRazorpayClient();
-      const plan = await razorpay.plans.create({
-        period: SUBSCRIPTION_INTERVAL || 'monthly',
-        interval: Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
-        item: {
-          name: 'SSF Donation',
-          amount: requestedAmount,
-          currency: SUBSCRIPTION_CURRENCY || 'INR',
-          description: SUBSCRIPTION_DESCRIPTION || 'SSF monthly donation plan',
-        },
-        notes: {
-          donor_pan: customer.pan,
-          donor_email: customer.email,
-        },
-        total_count: totalCount || Number(SUBSCRIPTION_TOTAL_COUNT) || 12,
-      });
-
-      effectivePlanId = plan.id;
-    }
+    const effectivePlanId = await getPlanIdForAmount({
+      requestedAmount,
+      planId,
+      defaultAmount,
+      currency: SUBSCRIPTION_CURRENCY || 'INR',
+      interval: SUBSCRIPTION_INTERVAL || 'monthly',
+      intervalCount: Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
+      totalCount: totalCount || Number(SUBSCRIPTION_TOTAL_COUNT) || 12,
+      customer,
+    });
 
     const subscription = await razorpay.subscriptions.create({
       plan_id: effectivePlanId,
@@ -136,6 +171,7 @@ router.post('/create', async (req, res, next) => {
       subscriptionId: subscription.id,
       customerId: customerRecord.id,
       subscription,
+      razorpayKeyId: RAZORPAY_KEY_ID,
     });
   } catch (error) {
     next(error);
