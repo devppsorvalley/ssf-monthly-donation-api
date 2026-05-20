@@ -117,15 +117,24 @@ Redirect donor to Razorpay checkout
     ```
 
 ## How to use with WordPress
-- Use the hosted subscription page URL from this server as the shared donate link.
-- Example: `https://your-domain.com/subscription.html`
-- From WordPress, link the subscription button to that page.
+- Use the WordPress donate form to submit directly to the backend API.
+- The subscription UI now runs inside WordPress as a custom HTML block.
 
 ## Notes
-- This project is designed to support a reusable subscription page for multiple donors.
-- Donors can enter their own amount on the subscription page, and the backend will create a matching Razorpay subscription plan if needed.
+- This project is designed to support a reusable subscription flow for multiple donors via your WordPress page.
+- Donors can enter their own amount on the WordPress form, and the backend will create a matching Razorpay subscription plan if needed.
 - If you want to use Razorpay Payment Pages directly, the `/api/subscriptions/payment-page` endpoint can create a Razorpay payment page link.
 - For a real deployment, set up HTTPS and webhook handling for subscription events.
+
+## Elementor integration
+To embed the subscription form into your existing donate page with Elementor:
+
+1. Use an `HTML` widget on your Elementor page.
+2. Paste the custom form + JS block into the widget.
+3. Replace `https://web-production-5b23b.up.railway.app` with your actual Railway app URL.
+4. Save the page and test the form.
+
+The form can submit directly to `/api/subscriptions/create` without the old `subscription.html` page.
 
 ## Railway deployment
 Railway supports automatic deployment from GitHub with free HTTPS.

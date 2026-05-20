@@ -20,7 +20,7 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'subscription.html'));
+  res.send('SSF Subscription API is running. Use the WordPress donate form to submit to /api/subscriptions/create.');
 });
 
 app.use((err, req, res, next) => {
