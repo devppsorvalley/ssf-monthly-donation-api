@@ -35,11 +35,25 @@ async function findExistingPlan(razorpay, amount, currency, interval, intervalCo
 }
 
 async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, currency, interval, intervalCount, totalCount, customer }) {
+  const razorpay = getRazorpayClient();
+
   if (planId && Number(requestedAmount) === Number(defaultAmount)) {
-    return planId;
+    try {
+      const plan = await razorpay.plans.fetch(planId);
+      const item = plan.item || {};
+      if (
+        Number(item.amount) === Number(requestedAmount) &&
+        String(item.currency || '').toUpperCase() === String(currency || '').toUpperCase() &&
+        String(plan.period || '').toLowerCase() === String(interval || '').toLowerCase() &&
+        Number(plan.interval) === Number(intervalCount)
+      ) {
+        return planId;
+      }
+    } catch (err) {
+      console.warn('Configured planId is invalid or missing, creating/finding a matching plan', err.message);
+    }
   }
 
-  const razorpay = getRazorpayClient();
   const existingPlan = await findExistingPlan(razorpay, requestedAmount, currency, interval, intervalCount);
   if (existingPlan) {
     return existingPlan.id;
