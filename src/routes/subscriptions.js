@@ -141,6 +141,54 @@ async function findExistingPlan(razorpay, amount, currency, interval, intervalCo
   }) || null;
 }
 
+async function findExistingCustomer(razorpay, customer) {
+  const response = await razorpay.customers.all({ count: 100, skip: 0 });
+  const customers = Array.isArray(response.items) ? response.items : response;
+
+  if (!Array.isArray(customers)) {
+    return null;
+  }
+
+  const matchingCustomers = customers.filter((existingCustomer) => {
+    const emailMatches = String(existingCustomer.email || '').toLowerCase() === customer.email;
+    const contactMatches = String(existingCustomer.contact || '') === customer.contact;
+    return emailMatches || contactMatches;
+  });
+
+  return matchingCustomers.find((existingCustomer) => {
+    const emailMatches = String(existingCustomer.email || '').toLowerCase() === customer.email;
+    const contactMatches = String(existingCustomer.contact || '') === customer.contact;
+    return emailMatches && contactMatches;
+  }) || (matchingCustomers.length === 1 ? matchingCustomers[0] : null);
+}
+
+async function createOrFetchCustomer(razorpay, customer, requestedAmount) {
+  const payload = {
+    ...customer,
+    notes: {
+      pan: customer.pan,
+      donation_amount: String(requestedAmount),
+    },
+    fail_existing: '0',
+  };
+
+  try {
+    return await razorpay.customers.create(payload);
+  } catch (error) {
+    const description = error && error.error && error.error.description;
+    if (!description || !description.includes('Customer already exists')) {
+      throw error;
+    }
+
+    const existingCustomer = await findExistingCustomer(razorpay, customer);
+    if (existingCustomer) {
+      return existingCustomer;
+    }
+
+    throw error;
+  }
+}
+
 async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, currency, interval, intervalCount, totalCount, customer }) {
   const razorpay = getRazorpayClient();
 
@@ -247,6 +295,7 @@ router.post('/create', async (req, res, next) => {
 
     const razorpay = getRazorpayClient();
     const requestedAmount = validation.requestedAmount;
+    const customerRecord = await createOrFetchCustomer(razorpay, validation.customer, requestedAmount);
     const defaultAmount = Number(SUBSCRIPTION_AMOUNT) || requestedAmount;
     const effectivePlanId = await getPlanIdForAmount({
       requestedAmount,
@@ -282,6 +331,7 @@ router.post('/create', async (req, res, next) => {
       subscriptionId: subscription.id,
       checkoutUrl: subscription.short_url,
       razorpayKeyId: RAZORPAY_KEY_ID,
+      customerId: customerRecord.id,
     });
   } catch (error) {
     next(error);

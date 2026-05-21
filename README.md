@@ -91,6 +91,7 @@ Redirect donor to Razorpay checkout
 
 - `POST /api/subscriptions/create`
   - Creates a Razorpay subscription for the configured or matching plan.
+  - Creates or reuses a Razorpay customer and returns `customerId` for Checkout.
   - Sends donor phone/email to Razorpay as `notify_info` and stores donor details in subscription notes.
   - Validates donor name, email, phone, PAN, donation amount, quantity, and billing cycles on the server.
   - `amount` must be an integer in paise between `MIN_DONATION_AMOUNT` and `MAX_DONATION_AMOUNT`.
@@ -115,7 +116,8 @@ Redirect donor to Razorpay checkout
       "success": true,
       "subscriptionId": "sub_XXXXXXX",
       "checkoutUrl": "https://rzp.io/...",
-      "razorpayKeyId": "rzp_live_XXXXXXX"
+      "razorpayKeyId": "rzp_live_XXXXXXX",
+      "customerId": "cust_XXXXXXX"
     }
     ```
 
@@ -276,13 +278,14 @@ The form submits directly to `/api/subscriptions/create`, opens Razorpay Checkou
 
       const data = await response.json();
 
-      if (!response.ok || !data.success || !data.subscriptionId || !data.razorpayKeyId) {
+      if (!response.ok || !data.success || !data.subscriptionId || !data.razorpayKeyId || !data.customerId) {
         throw new Error(data.error || 'Failed to create subscription');
       }
 
       const razorpay = new Razorpay({
         key: data.razorpayKeyId,
         subscription_id: data.subscriptionId,
+        customer_id: data.customerId,
         name: 'SSF',
         description: 'Monthly Donation',
         prefill: {
