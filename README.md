@@ -23,7 +23,7 @@ Redirect donor to Razorpay checkout
 
 ## Features
 - Create a Razorpay subscription plan
-- Create customers and subscriptions for recurring donations
+- Create Razorpay subscription links for recurring donations
 - Reusable subscription page for multiple donors
 - Supports donor-entered custom subscription amount
 - Works with WordPress by linking to the hosted subscription page
@@ -90,8 +90,8 @@ Redirect donor to Razorpay checkout
   - Returns current plan ID and shared subscription metadata.
 
 - `POST /api/subscriptions/create`
-  - Creates a Razorpay customer and subscription for the configured plan.
-  - Reuses an existing Razorpay customer when the same donor details already exist.
+  - Creates a hosted Razorpay subscription link for the configured or matching plan.
+  - Sends donor phone/email to Razorpay as `notify_info` and stores donor details in subscription notes.
   - Validates donor name, email, phone, PAN, donation amount, quantity, and billing cycles on the server.
   - `amount` must be an integer in paise between `MIN_DONATION_AMOUNT` and `MAX_DONATION_AMOUNT`.
   - `quantity` must be `1`; `totalCount` must be between `1` and `MAX_SUBSCRIPTION_TOTAL_COUNT`.

@@ -130,54 +130,6 @@ async function findExistingPlan(razorpay, amount, currency, interval, intervalCo
   }) || null;
 }
 
-async function findExistingCustomer(razorpay, customer) {
-  const response = await razorpay.customers.all({ count: 100, skip: 0 });
-  const customers = Array.isArray(response.items) ? response.items : response;
-
-  if (!Array.isArray(customers)) {
-    return null;
-  }
-
-  const matchingCustomers = customers.filter((existingCustomer) => {
-    const emailMatches = String(existingCustomer.email || '').toLowerCase() === customer.email;
-    const contactMatches = String(existingCustomer.contact || '') === customer.contact;
-    return emailMatches || contactMatches;
-  });
-
-  return matchingCustomers.find((existingCustomer) => {
-    const emailMatches = String(existingCustomer.email || '').toLowerCase() === customer.email;
-    const contactMatches = String(existingCustomer.contact || '') === customer.contact;
-    return emailMatches && contactMatches;
-  }) || (matchingCustomers.length === 1 ? matchingCustomers[0] : null);
-}
-
-async function createOrFetchCustomer(razorpay, customer, requestedAmount) {
-  const payload = {
-    ...customer,
-    notes: {
-      pan: customer.pan,
-      donation_amount: String(requestedAmount),
-    },
-    fail_existing: '0',
-  };
-
-  try {
-    return await razorpay.customers.create(payload);
-  } catch (error) {
-    const description = error && error.error && error.error.description;
-    if (!description || !description.includes('Customer already exists')) {
-      throw error;
-    }
-
-    const existingCustomer = await findExistingCustomer(razorpay, customer);
-    if (existingCustomer) {
-      return existingCustomer;
-    }
-
-    throw error;
-  }
-}
-
 async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, currency, interval, intervalCount, totalCount, customer }) {
   const razorpay = getRazorpayClient();
 
@@ -273,7 +225,7 @@ router.get('/config', (req, res) => {
   });
 });
 
-// Create a customer and subscription using a saved plan.
+// Create a hosted Razorpay subscription link using a saved or matching plan.
 router.post('/create', async (req, res, next) => {
   try {
     const { customer, planId, amount, totalCount, quantity = 1 } = req.body;
@@ -283,8 +235,6 @@ router.post('/create', async (req, res, next) => {
     }
 
     const razorpay = getRazorpayClient();
-    const customerRecord = await createOrFetchCustomer(razorpay, validation.customer, validation.requestedAmount);
-
     const requestedAmount = validation.requestedAmount;
     const defaultAmount = Number(SUBSCRIPTION_AMOUNT) || requestedAmount;
     const effectivePlanId = await getPlanIdForAmount({
@@ -302,10 +252,15 @@ router.post('/create', async (req, res, next) => {
       plan_id: effectivePlanId,
       customer_notify: 1,
       quantity: validation.quantity,
-      customer_id: customerRecord.id,
       total_count: validation.billingCycles,
+      notify_info: {
+        notify_phone: validation.customer.contact,
+        notify_email: validation.customer.email,
+      },
       notes: {
         donor_name: validation.customer.name,
+        donor_email: validation.customer.email,
+        donor_contact: validation.customer.contact,
         donor_pan: validation.customer.pan,
         donation_amount: String(validation.requestedAmount),
       },
