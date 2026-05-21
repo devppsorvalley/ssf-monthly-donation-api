@@ -135,9 +135,9 @@ router.post('/create', async (req, res, next) => {
   try {
     const { customer, planId, amount, totalCount, quantity = 1 } = req.body;
 
-    if (!customer || !customer.name || !customer.email || !customer.contact) {
+    if (!customer || !customer.name || !customer.email || !customer.contact || !customer.pan) {
       return res.status(400).json({
-        error: 'Customer data is required: name, email, contact.',
+        error: 'Customer data is required: name, email, contact, pan.',
       });
     }
 

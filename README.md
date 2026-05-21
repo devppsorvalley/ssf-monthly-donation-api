@@ -96,7 +96,7 @@ Redirect donor to Razorpay checkout
         "name": "Asha Singh",
         "email": "asha@example.com",
         "contact": "9123456780",
-        "pan": "ABCDE1234F" (optional)
+        "pan": "ABCDE1234F"
       },
       "amount": 10000,
       "quantity": 1
@@ -168,8 +168,8 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
   </div>
 
   <div style="margin-bottom: 15px;">
-    <label for="pan" style="display: block; margin-bottom: 5px; font-weight: bold;">PAN (optional)</label>
-    <input type="text" id="pan" name="pan" placeholder="ABCDE1234F" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+    <label for="pan" style="display: block; margin-bottom: 5px; font-weight: bold;">PAN *</label>
+    <input type="text" id="pan" name="pan" placeholder="ABCDE1234F" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
   </div>
 
   <div style="margin-bottom: 15px;">
