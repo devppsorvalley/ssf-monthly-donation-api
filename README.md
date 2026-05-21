@@ -148,6 +148,9 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
 
 ### Sample WordPress Elementor Form Code
 ```html
+<div id="messageBox" style="margin-bottom: 20px; padding: 12px; border-radius: 4px; display: none; font-weight: bold; text-align: center; border-left: 4px solid;">
+</div>
+
 <form id="donationForm" style="max-width: 500px; margin: 20px auto;">
   <div style="margin-bottom: 15px;">
     <label for="name" style="display: block; margin-bottom: 5px; font-weight: bold;">Name *</label>
@@ -180,6 +183,37 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
 </form>
 
 <script>
+  // Show success/failure message on page load if returning from checkout
+  window.addEventListener('load', function() {
+    const messageBox = document.getElementById('messageBox');
+    
+    if (sessionStorage.getItem('donationSuccess')) {
+      messageBox.textContent = '✓ Thank you! Your subscription has been created successfully.';
+      messageBox.style.backgroundColor = '#d4edda';
+      messageBox.style.color = '#155724';
+      messageBox.style.borderLeftColor = '#28a745';
+      messageBox.style.display = 'block';
+      document.getElementById('donationForm').reset();
+      sessionStorage.removeItem('donationSuccess');
+      setTimeout(() => {
+        messageBox.style.display = 'none';
+      }, 5000);
+    }
+    
+    if (sessionStorage.getItem('donationError')) {
+      const errorMsg = sessionStorage.getItem('donationError');
+      messageBox.textContent = '✗ Error: ' + errorMsg;
+      messageBox.style.backgroundColor = '#f8d7da';
+      messageBox.style.color = '#721c24';
+      messageBox.style.borderLeftColor = '#dc3545';
+      messageBox.style.display = 'block';
+      sessionStorage.removeItem('donationError');
+      setTimeout(() => {
+        messageBox.style.display = 'none';
+      }, 5000);
+    }
+  });
+
   document.getElementById('donationForm').addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -206,19 +240,25 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
       const data = await response.json();
 
       if (data.success && data.checkoutUrl) {
-        // Redirect to Razorpay checkout with key
-        if (data.razorpayKeyId) {
-          // Append key to URL if needed by Razorpay
-          const checkoutUrl = new URL(data.checkoutUrl);
-          window.location.href = checkoutUrl.toString();
-        } else {
-          window.location.href = data.checkoutUrl;
+        // Store success flag and redirect to Razorpay checkout
+        sessionStorage.setItem('donationSuccess', 'true');
+        window.location.href = data.checkoutUrl;
       } else {
-        alert('Error: ' + (data.error || 'Failed to create subscription'));
+        const messageBox = document.getElementById('messageBox');
+        messageBox.textContent = '✗ Error: ' + (data.error || 'Failed to create subscription');
+        messageBox.style.backgroundColor = '#f8d7da';
+        messageBox.style.color = '#721c24';
+        messageBox.style.borderLeftColor = '#dc3545';
+        messageBox.style.display = 'block';
       }
     } catch (error) {
       console.error('Form submission error:', error);
-      alert('An error occurred. Please try again.');
+      const messageBox = document.getElementById('messageBox');
+      messageBox.textContent = '✗ An error occurred. Please try again.';
+      messageBox.style.backgroundColor = '#f8d7da';
+      messageBox.style.color = '#721c24';
+      messageBox.style.borderLeftColor = '#dc3545';
+      messageBox.style.display = 'block';
     }
   });
 </script>
