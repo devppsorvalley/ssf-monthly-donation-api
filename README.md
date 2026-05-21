@@ -90,7 +90,7 @@ Redirect donor to Razorpay checkout
   - Returns current plan ID and shared subscription metadata.
 
 - `POST /api/subscriptions/create`
-  - Creates a hosted Razorpay subscription link for the configured or matching plan.
+  - Creates a Razorpay subscription for the configured or matching plan.
   - Sends donor phone/email to Razorpay as `notify_info` and stores donor details in subscription notes.
   - Validates donor name, email, phone, PAN, donation amount, quantity, and billing cycles on the server.
   - `amount` must be an integer in paise between `MIN_DONATION_AMOUNT` and `MAX_DONATION_AMOUNT`.
@@ -114,7 +114,31 @@ Redirect donor to Razorpay checkout
     {
       "success": true,
       "subscriptionId": "sub_XXXXXXX",
-      "checkoutUrl": "https://rzp.io/..."
+      "checkoutUrl": "https://rzp.io/...",
+      "razorpayKeyId": "rzp_live_XXXXXXX"
+    }
+    ```
+
+- `POST /api/subscriptions/verify`
+  - Verifies the Razorpay Checkout subscription payment signature after authorization.
+  - Fetches the subscription and returns the linked `customerId` once Razorpay has created it.
+  - Body example:
+    ```json
+    {
+      "subscriptionId": "sub_XXXXXXX",
+      "razorpay_payment_id": "pay_XXXXXXX",
+      "razorpay_subscription_id": "sub_XXXXXXX",
+      "razorpay_signature": "signature_from_checkout"
+    }
+    ```
+  - Response:
+    ```json
+    {
+      "success": true,
+      "subscriptionId": "sub_XXXXXXX",
+      "paymentId": "pay_XXXXXXX",
+      "customerId": "cust_XXXXXXX",
+      "status": "active"
     }
     ```
 
@@ -152,7 +176,7 @@ To embed the subscription form into your existing donate page with Elementor:
 3. Replace `https://ssf-monthly-donation-api.onrender.com` with your actual API server URL.
 4. Save the page and test the form.
 
-The form submits directly to `/api/subscriptions/create`, receives the checkout URL, and redirects the donor to Razorpay checkout.
+The form submits directly to `/api/subscriptions/create`, opens Razorpay Checkout with the returned `subscriptionId`, verifies the successful authorization via `/api/subscriptions/verify`, and redirects the donor back to the donate page with a success or failure message.
 
 ### Sample WordPress Elementor Form Code
 ```html
@@ -185,41 +209,43 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
     <input type="number" id="amount" name="amount" min="100" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
   </div>
 
-  <button type="submit" style="width: 100%; padding: 12px; background-color: #eca30c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
+  <button id="donationSubmitButton" type="submit" style="width: 100%; padding: 12px; background-color: #eca30c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
     Start Monthly Donation
   </button>
-  <p style="margin-top: 12px; color: #333; font-size: 14px;">You will be redirected to Razorpay to complete the subscription securely.</p>
+  <p style="margin-top: 12px; color: #333; font-size: 14px;">Razorpay Checkout will open securely to complete the subscription.</p>
 </form>
 
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
-  // Show success/failure message on page load if returning from checkout
-  window.addEventListener('load', function() {
+  const API_BASE_URL = 'https://ssf-monthly-donation-api.onrender.com';
+  const DONATE_PAGE_URL = window.location.origin + window.location.pathname;
+
+  function showDonationMessage(message, type) {
     const messageBox = document.getElementById('messageBox');
-    
+    messageBox.textContent = message;
+    messageBox.style.backgroundColor = type === 'error' ? '#f8d7da' : '#d4edda';
+    messageBox.style.color = type === 'error' ? '#721c24' : '#155724';
+    messageBox.style.borderLeftColor = type === 'error' ? '#dc3545' : '#28a745';
+    messageBox.style.display = 'block';
+  }
+
+  function setSubmitState(isSubmitting) {
+    const submitButton = document.getElementById('donationSubmitButton');
+    submitButton.disabled = isSubmitting;
+    submitButton.textContent = isSubmitting ? 'Processing...' : 'Start Monthly Donation';
+  }
+
+  window.addEventListener('load', function() {
     if (sessionStorage.getItem('donationSuccess')) {
-      messageBox.textContent = '✓ Thank you! Your subscription has been created successfully.';
-      messageBox.style.backgroundColor = '#d4edda';
-      messageBox.style.color = '#155724';
-      messageBox.style.borderLeftColor = '#28a745';
-      messageBox.style.display = 'block';
+      showDonationMessage('✓ Thank you! Your monthly donation subscription has been created successfully.', 'success');
       document.getElementById('donationForm').reset();
       sessionStorage.removeItem('donationSuccess');
-      setTimeout(() => {
-        messageBox.style.display = 'none';
-      }, 5000);
     }
     
     if (sessionStorage.getItem('donationError')) {
       const errorMsg = sessionStorage.getItem('donationError');
-      messageBox.textContent = '✗ Error: ' + errorMsg;
-      messageBox.style.backgroundColor = '#f8d7da';
-      messageBox.style.color = '#721c24';
-      messageBox.style.borderLeftColor = '#dc3545';
-      messageBox.style.display = 'block';
+      showDonationMessage('✗ Error: ' + errorMsg, 'error');
       sessionStorage.removeItem('donationError');
-      setTimeout(() => {
-        messageBox.style.display = 'none';
-      }, 5000);
     }
   });
 
@@ -228,17 +254,19 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
 
     const formData = {
       customer: {
-        name: document.getElementById('name').value,
-        email: document.getElementById('email').value,
-        contact: document.getElementById('contact').value,
-        pan: document.getElementById('pan').value || null,
+        name: document.getElementById('name').value.trim(),
+        email: document.getElementById('email').value.trim().toLowerCase(),
+        contact: document.getElementById('contact').value.trim(),
+        pan: document.getElementById('pan').value.trim().toUpperCase(),
       },
-      amount: parseInt(document.getElementById('amount').value) * 100,
+      amount: Number(document.getElementById('amount').value) * 100,
       quantity: 1,
     };
 
+    setSubmitState(true);
+
     try {
-      const response = await fetch('https://ssf-monthly-donation-api.onrender.com/api/subscriptions/create', {
+      const response = await fetch(API_BASE_URL + '/api/subscriptions/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -248,24 +276,75 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
 
       const data = await response.json();
 
-      if (data.success && data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-      } else {
-        const messageBox = document.getElementById('messageBox');
-        messageBox.textContent = '✗ Error: ' + (data.error || 'Failed to create subscription');
-        messageBox.style.backgroundColor = '#f8d7da';
-        messageBox.style.color = '#721c24';
-        messageBox.style.borderLeftColor = '#dc3545';
-        messageBox.style.display = 'block';
+      if (!response.ok || !data.success || !data.subscriptionId || !data.razorpayKeyId) {
+        throw new Error(data.error || 'Failed to create subscription');
       }
+
+      const razorpay = new Razorpay({
+        key: data.razorpayKeyId,
+        subscription_id: data.subscriptionId,
+        name: 'SSF',
+        description: 'Monthly Donation',
+        prefill: {
+          name: formData.customer.name,
+          email: formData.customer.email,
+          contact: formData.customer.contact,
+        },
+        notes: {
+          donor_pan: formData.customer.pan,
+          donation_amount: String(formData.amount),
+        },
+        theme: {
+          color: '#eca30c',
+        },
+        modal: {
+          ondismiss: function() {
+            setSubmitState(false);
+            showDonationMessage('✗ Payment was cancelled before completion.', 'error');
+          },
+        },
+        handler: async function(paymentResponse) {
+          try {
+            const verifyResponse = await fetch(API_BASE_URL + '/api/subscriptions/verify', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                subscriptionId: data.subscriptionId,
+                razorpay_payment_id: paymentResponse.razorpay_payment_id,
+                razorpay_subscription_id: paymentResponse.razorpay_subscription_id,
+                razorpay_signature: paymentResponse.razorpay_signature,
+              }),
+            });
+
+            const verifyData = await verifyResponse.json();
+            if (!verifyResponse.ok || !verifyData.success) {
+              throw new Error(verifyData.error || 'Payment verification failed');
+            }
+
+            sessionStorage.setItem('donationSuccess', 'true');
+            window.location.href = DONATE_PAGE_URL;
+          } catch (verifyError) {
+            sessionStorage.setItem('donationError', verifyError.message);
+            window.location.href = DONATE_PAGE_URL;
+          }
+        },
+      });
+
+      razorpay.on('payment.failed', function(response) {
+        const description = response.error && response.error.description
+          ? response.error.description
+          : 'Payment failed or was cancelled.';
+        sessionStorage.setItem('donationError', description);
+        window.location.href = DONATE_PAGE_URL;
+      });
+
+      razorpay.open();
     } catch (error) {
       console.error('Form submission error:', error);
-      const messageBox = document.getElementById('messageBox');
-      messageBox.textContent = '✗ An error occurred. Please try again.';
-      messageBox.style.backgroundColor = '#f8d7da';
-      messageBox.style.color = '#721c24';
-      messageBox.style.borderLeftColor = '#dc3545';
-      messageBox.style.display = 'block';
+      showDonationMessage('✗ Error: ' + error.message, 'error');
+      setSubmitState(false);
     }
   });
 </script>

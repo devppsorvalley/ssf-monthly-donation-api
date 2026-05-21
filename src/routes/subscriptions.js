@@ -113,6 +113,17 @@ function requireAdminToken(req, res) {
   return true;
 }
 
+function secureCompare(value, expected) {
+  const valueBuffer = Buffer.from(String(value || ''), 'utf8');
+  const expectedBuffer = Buffer.from(String(expected || ''), 'utf8');
+
+  if (valueBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(valueBuffer, expectedBuffer);
+}
+
 async function findExistingPlan(razorpay, amount, currency, interval, intervalCount) {
   const response = await razorpay.plans.all({ count: 100, skip: 0 });
   const plans = Array.isArray(response.items) ? response.items : response;
@@ -225,7 +236,7 @@ router.get('/config', (req, res) => {
   });
 });
 
-// Create a hosted Razorpay subscription link using a saved or matching plan.
+// Create a Razorpay subscription using a saved or matching plan.
 router.post('/create', async (req, res, next) => {
   try {
     const { customer, planId, amount, totalCount, quantity = 1 } = req.body;
@@ -271,6 +282,47 @@ router.post('/create', async (req, res, next) => {
       subscriptionId: subscription.id,
       checkoutUrl: subscription.short_url,
       razorpayKeyId: RAZORPAY_KEY_ID,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/verify', async (req, res, next) => {
+  try {
+    const {
+      subscriptionId,
+      razorpay_payment_id: paymentId,
+      razorpay_subscription_id: razorpaySubscriptionId,
+      razorpay_signature: signature,
+    } = req.body;
+
+    if (!subscriptionId || !paymentId || !razorpaySubscriptionId || !signature) {
+      return res.status(400).json({ error: 'Payment verification data is incomplete.' });
+    }
+
+    if (subscriptionId !== razorpaySubscriptionId) {
+      return res.status(400).json({ error: 'Subscription ID mismatch.' });
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', RAZORPAY_KEY_SECRET)
+      .update(`${paymentId}|${subscriptionId}`)
+      .digest('hex');
+
+    if (!secureCompare(signature, expectedSignature)) {
+      return res.status(400).json({ error: 'Invalid payment signature.' });
+    }
+
+    const razorpay = getRazorpayClient();
+    const subscription = await razorpay.subscriptions.fetch(subscriptionId);
+
+    res.json({
+      success: true,
+      subscriptionId,
+      paymentId,
+      customerId: subscription.customer_id || null,
+      status: subscription.status,
     });
   } catch (error) {
     next(error);
