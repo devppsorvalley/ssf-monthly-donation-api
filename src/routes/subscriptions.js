@@ -312,6 +312,7 @@ router.post('/create', async (req, res, next) => {
       plan_id: effectivePlanId,
       customer_notify: 1,
       quantity: validation.quantity,
+      customer_id: customerRecord.id,
       total_count: validation.billingCycles,
       notify_info: {
         notify_phone: validation.customer.contact,

@@ -91,7 +91,7 @@ Redirect donor to Razorpay checkout
 
 - `POST /api/subscriptions/create`
   - Creates a Razorpay subscription for the configured or matching plan.
-  - Creates or reuses a Razorpay customer and stores that ID in subscription notes.
+  - Creates or reuses a Razorpay customer and links that customer to the subscription.
   - Sends donor phone/email to Razorpay as `notify_info` and stores donor details in subscription notes.
   - Validates donor name, email, phone, PAN, donation amount, quantity, and billing cycles on the server.
   - `amount` must be an integer in paise between `MIN_DONATION_AMOUNT` and `MAX_DONATION_AMOUNT`.
