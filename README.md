@@ -206,8 +206,13 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
       const data = await response.json();
 
       if (data.success && data.checkoutUrl) {
-        // Redirect to Razorpay checkout
-        window.location.href = data.checkoutUrl;
+        // Redirect to Razorpay checkout with key
+        if (data.razorpayKeyId) {
+          // Append key to URL if needed by Razorpay
+          const checkoutUrl = new URL(data.checkoutUrl);
+          window.location.href = checkoutUrl.toString();
+        } else {
+          window.location.href = data.checkoutUrl;
       } else {
         alert('Error: ' + (data.error || 'Failed to create subscription'));
       }

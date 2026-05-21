@@ -188,6 +188,7 @@ router.post('/create', async (req, res, next) => {
       success: true,
       subscriptionId: subscription.id,
       checkoutUrl: subscription.short_url,
+      razorpayKeyId: RAZORPAY_KEY_ID,
     });
   } catch (error) {
     next(error);
