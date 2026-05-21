@@ -177,9 +177,10 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
     <input type="number" id="amount" name="amount" min="100" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
   </div>
 
-  <button type="submit" style="width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
+  <button type="submit" style="width: 100%; padding: 12px; background-color: #eca30c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
     Start Monthly Donation
   </button>
+  <p style="margin-top: 12px; color: #333; font-size: 14px;">You will be redirected to Razorpay to complete the subscription securely.</p>
 </form>
 
 <script>
