@@ -17,6 +17,102 @@ const {
   SUBSCRIPTION_DESCRIPTION,
 } = process.env;
 
+const DEFAULT_MIN_DONATION_AMOUNT = 10000;
+const DEFAULT_MAX_DONATION_AMOUNT = 10000000;
+const DEFAULT_MAX_TOTAL_COUNT = 120;
+
+function getNumberEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function normalizeCustomer(customer) {
+  if (!customer || typeof customer !== 'object') {
+    return null;
+  }
+
+  return {
+    name: String(customer.name || '').trim(),
+    email: String(customer.email || '').trim().toLowerCase(),
+    contact: String(customer.contact || '').trim(),
+    pan: String(customer.pan || '').trim().toUpperCase(),
+  };
+}
+
+function validateDonationRequest({ customer, amount, totalCount, quantity }) {
+  const normalizedCustomer = normalizeCustomer(customer);
+  if (!normalizedCustomer || !normalizedCustomer.name || !normalizedCustomer.email || !normalizedCustomer.contact || !normalizedCustomer.pan) {
+    return { error: 'Customer data is required: name, email, contact, pan.' };
+  }
+
+  if (normalizedCustomer.name.length > 100) {
+    return { error: 'Name must be 100 characters or fewer.' };
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedCustomer.email)) {
+    return { error: 'A valid email address is required.' };
+  }
+
+  if (!/^\+?[0-9]{7,15}$/.test(normalizedCustomer.contact)) {
+    return { error: 'A valid phone number is required.' };
+  }
+
+  if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(normalizedCustomer.pan)) {
+    return { error: 'A valid PAN is required.' };
+  }
+
+  const requestedAmount = Number(amount);
+  const minAmount = getNumberEnv('MIN_DONATION_AMOUNT', DEFAULT_MIN_DONATION_AMOUNT);
+  const maxAmount = getNumberEnv('MAX_DONATION_AMOUNT', DEFAULT_MAX_DONATION_AMOUNT);
+
+  if (!Number.isInteger(requestedAmount)) {
+    return { error: 'Amount must be an integer value in paise.' };
+  }
+
+  if (requestedAmount < minAmount || requestedAmount > maxAmount) {
+    return { error: `Amount must be between ${minAmount} and ${maxAmount} paise.` };
+  }
+
+  const requestedQuantity = Number(quantity);
+  if (!Number.isInteger(requestedQuantity) || requestedQuantity !== 1) {
+    return { error: 'Quantity must be 1 for donation subscriptions.' };
+  }
+
+  const defaultTotalCount = getIntegerEnv('SUBSCRIPTION_TOTAL_COUNT', 24);
+  const maxTotalCount = getIntegerEnv('MAX_SUBSCRIPTION_TOTAL_COUNT', DEFAULT_MAX_TOTAL_COUNT);
+  const billingCycles = totalCount === undefined ? defaultTotalCount : Number(totalCount);
+  if (!Number.isInteger(billingCycles) || billingCycles < 1 || billingCycles > maxTotalCount) {
+    return { error: `Total count must be an integer between 1 and ${maxTotalCount}.` };
+  }
+
+  return {
+    customer: normalizedCustomer,
+    requestedAmount,
+    quantity: requestedQuantity,
+    billingCycles,
+  };
+}
+
+function requireAdminToken(req, res) {
+  if (!process.env.ADMIN_TOKEN) {
+    res.status(503).json({ error: 'Admin token is not configured.' });
+    return false;
+  }
+
+  const adminToken = req.headers['x-admin-token'];
+  if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
+    res.status(403).json({ error: 'Unauthorized' });
+    return false;
+  }
+
+  return true;
+}
+
 async function findExistingPlan(razorpay, amount, currency, interval, intervalCount) {
   const response = await razorpay.plans.all({ count: 100, skip: 0 });
   const plans = Array.isArray(response.items) ? response.items : response;
@@ -32,6 +128,54 @@ async function findExistingPlan(razorpay, amount, currency, interval, intervalCo
       && String(plan.period || '').toLowerCase() === String(interval || '').toLowerCase()
       && Number(plan.interval) === Number(intervalCount);
   }) || null;
+}
+
+async function findExistingCustomer(razorpay, customer) {
+  const response = await razorpay.customers.all({ count: 100, skip: 0 });
+  const customers = Array.isArray(response.items) ? response.items : response;
+
+  if (!Array.isArray(customers)) {
+    return null;
+  }
+
+  const matchingCustomers = customers.filter((existingCustomer) => {
+    const emailMatches = String(existingCustomer.email || '').toLowerCase() === customer.email;
+    const contactMatches = String(existingCustomer.contact || '') === customer.contact;
+    return emailMatches || contactMatches;
+  });
+
+  return matchingCustomers.find((existingCustomer) => {
+    const emailMatches = String(existingCustomer.email || '').toLowerCase() === customer.email;
+    const contactMatches = String(existingCustomer.contact || '') === customer.contact;
+    return emailMatches && contactMatches;
+  }) || (matchingCustomers.length === 1 ? matchingCustomers[0] : null);
+}
+
+async function createOrFetchCustomer(razorpay, customer, requestedAmount) {
+  const payload = {
+    ...customer,
+    notes: {
+      pan: customer.pan,
+      donation_amount: String(requestedAmount),
+    },
+    fail_existing: '0',
+  };
+
+  try {
+    return await razorpay.customers.create(payload);
+  } catch (error) {
+    const description = error && error.error && error.error.description;
+    if (!description || !description.includes('Customer already exists')) {
+      throw error;
+    }
+
+    const existingCustomer = await findExistingCustomer(razorpay, customer);
+    if (existingCustomer) {
+      return existingCustomer;
+    }
+
+    throw error;
+  }
 }
 
 async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, currency, interval, intervalCount, totalCount, customer }) {
@@ -82,9 +226,8 @@ async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, curr
 // PROTECTED: This endpoint should only be used by admins during setup.
 router.post('/plan', async (req, res, next) => {
   try {
-    const adminToken = req.headers['x-admin-token'];
-    if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    if (!requireAdminToken(req, res)) {
+      return;
     }
 
     const {
@@ -134,32 +277,16 @@ router.get('/config', (req, res) => {
 router.post('/create', async (req, res, next) => {
   try {
     const { customer, planId, amount, totalCount, quantity = 1 } = req.body;
-
-    if (!customer || !customer.name || !customer.email || !customer.contact || !customer.pan) {
-      return res.status(400).json({
-        error: 'Customer data is required: name, email, contact, pan.',
-      });
-    }
-
-    if (!amount || Number(amount) <= 0) {
-      return res.status(400).json({
-        error: 'Amount is required and must be greater than zero.',
-      });
+    const validation = validateDonationRequest({ customer, amount, totalCount, quantity });
+    if (validation.error) {
+      return res.status(400).json({ error: validation.error });
     }
 
     const razorpay = getRazorpayClient();
-    const customerRecord = await razorpay.customers.create({
-      ...customer,
-      notes: {
-        pan: customer.pan,
-        donation_amount: String(amount),
-      },
-      fail_existing: 0,
-    });
+    const customerRecord = await createOrFetchCustomer(razorpay, validation.customer, validation.requestedAmount);
 
-    const requestedAmount = Number(amount);
+    const requestedAmount = validation.requestedAmount;
     const defaultAmount = Number(SUBSCRIPTION_AMOUNT) || requestedAmount;
-    const billingCycles = totalCount || Number(SUBSCRIPTION_TOTAL_COUNT) || 24;
     const effectivePlanId = await getPlanIdForAmount({
       requestedAmount,
       planId,
@@ -167,20 +294,20 @@ router.post('/create', async (req, res, next) => {
       currency: SUBSCRIPTION_CURRENCY || 'INR',
       interval: SUBSCRIPTION_INTERVAL || 'monthly',
       intervalCount: Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
-      totalCount: billingCycles,
-      customer,
+      totalCount: validation.billingCycles,
+      customer: validation.customer,
     });
 
     const subscription = await razorpay.subscriptions.create({
       plan_id: effectivePlanId,
       customer_notify: 1,
-      quantity,
+      quantity: validation.quantity,
       customer_id: customerRecord.id,
-      total_count: billingCycles,
+      total_count: validation.billingCycles,
       notes: {
-        donor_name: customer.name,
-        donor_pan: customer.pan,
-        donation_amount: String(amount),
+        donor_name: validation.customer.name,
+        donor_pan: validation.customer.pan,
+        donation_amount: String(validation.requestedAmount),
       },
     });
 
@@ -246,6 +373,10 @@ router.post('/webhook', async (req, res, next) => {
 // Create a reusable Razorpay payment page link for a subscription plan.
 router.post('/payment-page', async (req, res, next) => {
   try {
+    if (!requireAdminToken(req, res)) {
+      return;
+    }
+
     const {
       title = 'SSF Monthly Donation',
       description = SUBSCRIPTION_DESCRIPTION || 'Support SSF with a recurring donation',

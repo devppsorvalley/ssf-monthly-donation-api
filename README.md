@@ -40,6 +40,8 @@ Redirect donor to Razorpay checkout
    ```env
    RAZORPAY_KEY_ID=your_key_id
    RAZORPAY_KEY_SECRET=your_key_secret
+   RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+   ADMIN_TOKEN=your_long_random_admin_secret
    ```
 
 3. Optionally set a reusable plan ID after creating a plan once:
@@ -70,6 +72,7 @@ Redirect donor to Razorpay checkout
 
 - `POST /api/subscriptions/plan`
   - Creates a Razorpay subscription plan.
+  - Admin-only: requires `x-admin-token` to match `ADMIN_TOKEN`.
   - Body example:
     ```json
     {
@@ -88,6 +91,10 @@ Redirect donor to Razorpay checkout
 
 - `POST /api/subscriptions/create`
   - Creates a Razorpay customer and subscription for the configured plan.
+  - Reuses an existing Razorpay customer when the same donor details already exist.
+  - Validates donor name, email, phone, PAN, donation amount, quantity, and billing cycles on the server.
+  - `amount` must be an integer in paise between `MIN_DONATION_AMOUNT` and `MAX_DONATION_AMOUNT`.
+  - `quantity` must be `1`; `totalCount` must be between `1` and `MAX_SUBSCRIPTION_TOTAL_COUNT`.
   - Body example:
     ```json
     {
@@ -113,6 +120,7 @@ Redirect donor to Razorpay checkout
 
 - `POST /api/subscriptions/payment-page`
   - Attempts to create a reusable Razorpay payment page link for subscription donations.
+  - Admin-only: requires `x-admin-token` to match `ADMIN_TOKEN`.
   - Body example:
     ```json
     {
@@ -133,7 +141,7 @@ Redirect donor to Razorpay checkout
 ## Notes
 - This project is designed to support a reusable subscription flow for multiple donors via your WordPress page.
 - Donors can enter their own amount on the WordPress form, and the backend will create a matching Razorpay subscription plan if needed.
-- If you want to use Razorpay Payment Pages directly, the `/api/subscriptions/payment-page` endpoint can create a Razorpay payment page link.
+- If you want to use Razorpay Payment Pages directly, the admin-only `/api/subscriptions/payment-page` endpoint can create a Razorpay payment page link.
 - For a real deployment, set up HTTPS and webhook handling for subscription events.
 
 ## Elementor integration
@@ -241,8 +249,6 @@ The form submits directly to `/api/subscriptions/create`, receives the checkout 
       const data = await response.json();
 
       if (data.success && data.checkoutUrl) {
-        // Store success flag and redirect to Razorpay checkout
-        sessionStorage.setItem('donationSuccess', 'true');
         window.location.href = data.checkoutUrl;
       } else {
         const messageBox = document.getElementById('messageBox');
@@ -277,11 +283,14 @@ Render.com supports automatic deployment from GitHub with free HTTPS.
    - `RAZORPAY_KEY_ID` - Your Razorpay API key ID
    - `RAZORPAY_KEY_SECRET` - Your Razorpay API key secret
    - `RAZORPAY_WEBHOOK_SECRET` - Webhook secret from Razorpay dashboard
-   - `ADMIN_TOKEN` - Secret token for protecting the `/plan` endpoint (optional)
+   - `ADMIN_TOKEN` - Secret token for protecting admin endpoints
    - `SUBSCRIPTION_AMOUNT` - Default donation amount in paise (e.g., 10000 = ₹100)
    - `SUBSCRIPTION_CURRENCY` - Currency code (default: INR)
    - `SUBSCRIPTION_INTERVAL` - Billing interval (default: monthly)
    - `SUBSCRIPTION_INTERVAL_COUNT` - Number of intervals (default: 1)
+   - `MIN_DONATION_AMOUNT` - Minimum accepted donation amount in paise (default: 10000)
+   - `MAX_DONATION_AMOUNT` - Maximum accepted donation amount in paise (default: 10000000)
+   - `MAX_SUBSCRIPTION_TOTAL_COUNT` - Maximum billing cycles accepted from public requests (default: 120)
    - Optional: `RAZORPAY_PLAN_ID` - Reuse an existing Razorpay plan ID
 7. If Render asks for a start command, use:
    ```bash

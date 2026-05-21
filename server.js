@@ -2,9 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const dotenv = require('dotenv');
-const subscriptionRoutes = require('./src/routes/subscriptions');
 
 dotenv.config();
+
+const subscriptionRoutes = require('./src/routes/subscriptions');
 
 const app = express();
 const PORT = process.env.PORT || 4000;

@@ -61,27 +61,23 @@ const subscription = await razorpay.subscriptions.create({
 });
 ```
 
-### 3. ✅ Fixed `fail_existing` Parameter Type
+### 3. ✅ Fixed Existing Customer Handling
 **File:** `src/routes/subscriptions.js`
-**Issue:** `fail_existing` was being sent as a string `'0'` instead of integer `0`
-**Fix:** Changed to boolean/integer type (line ~159)
+**Issue:** Repeat donor submissions could fail with `Customer already exists for the merchant` if Razorpay did not receive `fail_existing` in the documented string format.
+**Fix:** Send `fail_existing: '0'` and fall back to fetching an existing matching customer before creating the subscription.
 
 **Before:**
 ```javascript
 const customerRecord = await razorpay.customers.create({
   ...customer,
   notes: {...},
-  fail_existing: '0',  // ❌ String instead of integer
+  fail_existing: 0,
 });
 ```
 
 **After:**
 ```javascript
-const customerRecord = await razorpay.customers.create({
-  ...customer,
-  notes: {...},
-  fail_existing: 0,  // ✅ Integer type
-});
+const customerRecord = await createOrFetchCustomer(razorpay, customer, amount);
 ```
 
 ### 4. ✅ Simplified API Response Format
