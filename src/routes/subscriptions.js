@@ -323,6 +323,7 @@ router.post('/create', async (req, res, next) => {
         donor_contact: validation.customer.contact,
         donor_pan: validation.customer.pan,
         donation_amount: String(validation.requestedAmount),
+        razorpay_customer_id: customerRecord.id,
       },
     });
 
