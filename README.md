@@ -95,9 +95,19 @@ Redirect donor to Razorpay checkout
       "customer": {
         "name": "Asha Singh",
         "email": "asha@example.com",
-        "contact": "9123456780"
+        "contact": "9123456780",
+        "pan": "ABCDE1234F" (optional)
       },
-      "totalCount": 12
+      "amount": 10000,
+      "quantity": 1
+    }
+    ```
+  - Response:
+    ```json
+    {
+      "success": true,
+      "subscriptionId": "sub_XXXXXXX",
+      "checkoutUrl": "https://rzp.io/..."
     }
     ```
 
@@ -130,44 +140,126 @@ Redirect donor to Razorpay checkout
 To embed the subscription form into your existing donate page with Elementor:
 
 1. Use an `HTML` widget on your Elementor page.
-2. Paste the custom form + JS block into the widget.
-3. Replace `https://web-production-5b23b.up.railway.app` with your actual Railway app URL.
+2. Paste the custom form + JS block (below) into the widget.
+3. Replace `https://ssf-monthly-donation-api.onrender.com` with your actual API server URL.
 4. Save the page and test the form.
 
-The form can submit directly to `/api/subscriptions/create` without the old `subscription.html` page.
+The form submits directly to `/api/subscriptions/create`, receives the checkout URL, and redirects the donor to Razorpay checkout.
 
-## Railway deployment
-Railway supports automatic deployment from GitHub with free HTTPS.
+### Sample WordPress Elementor Form Code
+```html
+<form id="donationForm" style="max-width: 500px; margin: 20px auto;">
+  <div style="margin-bottom: 15px;">
+    <label for="name" style="display: block; margin-bottom: 5px; font-weight: bold;">Name *</label>
+    <input type="text" id="name" name="name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
 
-1. Sign up at https://railway.app and connect your GitHub account.
-2. Create a new Railway project and choose "Deploy from GitHub".
+  <div style="margin-bottom: 15px;">
+    <label for="email" style="display: block; margin-bottom: 5px; font-weight: bold;">Email *</label>
+    <input type="email" id="email" name="email" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
+
+  <div style="margin-bottom: 15px;">
+    <label for="contact" style="display: block; margin-bottom: 5px; font-weight: bold;">Phone *</label>
+    <input type="tel" id="contact" name="contact" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
+
+  <div style="margin-bottom: 15px;">
+    <label for="pan" style="display: block; margin-bottom: 5px; font-weight: bold;">PAN (optional)</label>
+    <input type="text" id="pan" name="pan" placeholder="ABCDE1234F" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
+
+  <div style="margin-bottom: 15px;">
+    <label for="amount" style="display: block; margin-bottom: 5px; font-weight: bold;">Monthly Donation Amount (₹) *</label>
+    <input type="number" id="amount" name="amount" min="100" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
+
+  <button type="submit" style="width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
+    Start Monthly Donation
+  </button>
+</form>
+
+<script>
+  document.getElementById('donationForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = {
+      customer: {
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        contact: document.getElementById('contact').value,
+        pan: document.getElementById('pan').value || null,
+      },
+      amount: parseInt(document.getElementById('amount').value) * 100,
+      quantity: 1,
+    };
+
+    try {
+      const response = await fetch('https://ssf-monthly-donation-api.onrender.com/api/subscriptions/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.checkoutUrl) {
+        // Redirect to Razorpay checkout
+        window.location.href = data.checkoutUrl;
+      } else {
+        alert('Error: ' + (data.error || 'Failed to create subscription'));
+      }
+    } catch (error) {
+      console.error('Form submission error:', error);
+      alert('An error occurred. Please try again.');
+    }
+  });
+</script>
+```
+
+## Render deployment
+Render.com supports automatic deployment from GitHub with free HTTPS.
+
+1. Sign up at https://render.com and connect your GitHub account.
+2. Create a new Web Service and choose "Deploy from GitHub".
 3. Select the `devppsorvalley/ssf-monthly-donation-api` repository.
 4. Choose the `main` branch and set it to auto-deploy on each push.
-5. Railway will detect Node.js from `package.json`.
-6. Add the following environment variables in Railway project settings:
-   - `RAZORPAY_KEY_ID`
-   - `RAZORPAY_KEY_SECRET`
-   - `RAZORPAY_WEBHOOK_SECRET`
-   - optional: `RAZORPAY_PLAN_ID`
-7. If Railway asks for a start command, use:
+5. Render will detect Node.js from `package.json`.
+6. Add the following environment variables in Render project settings:
+   - `RAZORPAY_KEY_ID` - Your Razorpay API key ID
+   - `RAZORPAY_KEY_SECRET` - Your Razorpay API key secret
+   - `RAZORPAY_WEBHOOK_SECRET` - Webhook secret from Razorpay dashboard
+   - `ADMIN_TOKEN` - Secret token for protecting the `/plan` endpoint (optional)
+   - `SUBSCRIPTION_AMOUNT` - Default donation amount in paise (e.g., 10000 = ₹100)
+   - `SUBSCRIPTION_CURRENCY` - Currency code (default: INR)
+   - `SUBSCRIPTION_INTERVAL` - Billing interval (default: monthly)
+   - `SUBSCRIPTION_INTERVAL_COUNT` - Number of intervals (default: 1)
+   - Optional: `RAZORPAY_PLAN_ID` - Reuse an existing Razorpay plan ID
+7. If Render asks for a start command, use:
    ```bash
    npm start
    ```
-8. After deployment, Railway will provide a public HTTPS URL.
-9. Use the public URL in WordPress for the subscription page, e.g. `https://<railway-app>.railway.app/subscription.html`.
-10. Register the webhook URL in Razorpay as `https://<railway-app>.railway.app/api/subscriptions/webhook`.
+8. After deployment, Render will provide a public HTTPS URL (e.g., `https://ssf-monthly-donation-api.onrender.com`).
+9. Use this URL in your WordPress form as the API endpoint.
+10. Register the webhook URL in Razorpay dashboard as `https://ssf-monthly-donation-api.onrender.com/api/subscriptions/webhook`.
 
-Railway automatically enables SSL for your app URL, so your hosted subscription page is served securely.
+Render automatically enables SSL for your app URL, so your hosted API is served securely.
 
 ## Razorpay webhook setup
 1. Configure `RAZORPAY_WEBHOOK_SECRET` in your `.env` file.
-2. Expose the webhook endpoint from your hosted server:
-   - `POST /api/subscriptions/webhook`
-3. In the Razorpay dashboard, register the webhook URL and secret.
+2. The webhook endpoint `/api/subscriptions/webhook` is automatically configured to:
+   - Verify the `x-razorpay-signature` header using HMAC-SHA256
+   - Use the raw request body for signature validation (via middleware in `server.js`)
+   - Log subscription events for audit purposes
+3. In the Razorpay dashboard, register the webhook URL with your secret:
+   - Webhook URL: `https://ssf-monthly-donation-api.onrender.com/api/subscriptions/webhook`
+   - Webhook Secret: Your `RAZORPAY_WEBHOOK_SECRET` value
 4. Subscribe to these events at minimum:
    - `subscription.activated`
    - `subscription.charged`
    - `subscription.payment.failed`
    - `subscription.cancelled`
 
-The webhook route validates the `x-razorpay-signature` header and logs subscription success/failure events.
+The webhook route validates the Razorpay signature and logs subscription success/failure events to your server logs.

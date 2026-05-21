@@ -72,7 +72,6 @@ async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, curr
       donor_pan: customer.pan,
       donor_email: customer.email,
     },
-    total_count: totalCount,
   });
 
   return plan.id;
@@ -80,16 +79,21 @@ async function getPlanIdForAmount({ requestedAmount, planId, defaultAmount, curr
 
 // Create a reusable plan for subscriptions.
 // Use this once, then save the returned plan_id in RAZORPAY_PLAN_ID.
+// PROTECTED: This endpoint should only be used by admins during setup.
 router.post('/plan', async (req, res, next) => {
   try {
+    const adminToken = req.headers['x-admin-token'];
+    if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
     const {
-      planName = 'SSF Monthly Donation 500',
-      amount = Number(SUBSCRIPTION_AMOUNT) || 500,
+      planName = 'SSF Monthly Donation',
+      amount = Number(SUBSCRIPTION_AMOUNT) || 10000,
       currency = SUBSCRIPTION_CURRENCY || 'INR',
       interval = SUBSCRIPTION_INTERVAL || 'monthly',
       intervalCount = Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
-      totalCount = Number(SUBSCRIPTION_TOTAL_COUNT) || 24,
-      description = SUBSCRIPTION_DESCRIPTION || 'SSF monthly donation plan 500',
+      description = SUBSCRIPTION_DESCRIPTION || 'SSF monthly donation plan',
       notes = {},
     } = req.body;
 
@@ -104,7 +108,6 @@ router.post('/plan', async (req, res, next) => {
         description,
       },
       notes,
-      total_count: totalCount,
     });
 
     res.json({ plan });
@@ -132,9 +135,9 @@ router.post('/create', async (req, res, next) => {
   try {
     const { customer, planId, amount, totalCount, quantity = 1 } = req.body;
 
-    if (!customer || !customer.name || !customer.email || !customer.contact || !customer.pan) {
+    if (!customer || !customer.name || !customer.email || !customer.contact) {
       return res.status(400).json({
-        error: 'Customer data is required: name, PAN, email, contact.',
+        error: 'Customer data is required: name, email, contact.',
       });
     }
 
@@ -151,7 +154,7 @@ router.post('/create', async (req, res, next) => {
         pan: customer.pan,
         donation_amount: String(amount),
       },
-      fail_existing: '0',
+      fail_existing: 0,
     });
 
     const requestedAmount = Number(amount);
@@ -177,14 +180,12 @@ router.post('/create', async (req, res, next) => {
         donor_pan: customer.pan,
         donation_amount: String(amount),
       },
-      start_at: Math.floor(Date.now() / 1000) + 300,
     });
 
     res.json({
+      success: true,
       subscriptionId: subscription.id,
-      customerId: customerRecord.id,
-      subscription,
-      razorpayKeyId: RAZORPAY_KEY_ID,
+      checkoutUrl: subscription.short_url,
     });
   } catch (error) {
     next(error);
