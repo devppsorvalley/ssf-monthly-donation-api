@@ -159,6 +159,7 @@ router.post('/create', async (req, res, next) => {
 
     const requestedAmount = Number(amount);
     const defaultAmount = Number(SUBSCRIPTION_AMOUNT) || requestedAmount;
+    const billingCycles = totalCount || Number(SUBSCRIPTION_TOTAL_COUNT) || 24;
     const effectivePlanId = await getPlanIdForAmount({
       requestedAmount,
       planId,
@@ -166,7 +167,7 @@ router.post('/create', async (req, res, next) => {
       currency: SUBSCRIPTION_CURRENCY || 'INR',
       interval: SUBSCRIPTION_INTERVAL || 'monthly',
       intervalCount: Number(SUBSCRIPTION_INTERVAL_COUNT) || 1,
-      totalCount: totalCount || Number(SUBSCRIPTION_TOTAL_COUNT) || 12,
+      totalCount: billingCycles,
       customer,
     });
 
@@ -175,6 +176,7 @@ router.post('/create', async (req, res, next) => {
       customer_notify: 1,
       quantity,
       customer_id: customerRecord.id,
+      total_count: billingCycles,
       notes: {
         donor_name: customer.name,
         donor_pan: customer.pan,
