@@ -170,7 +170,6 @@ router.post('/create', async (req, res, next) => {
     const subscription = await razorpay.subscriptions.create({
       plan_id: effectivePlanId,
       customer_notify: 1,
-      total_count: totalCount || Number(SUBSCRIPTION_TOTAL_COUNT) || 12,
       quantity,
       customer_id: customerRecord.id,
       notes: {
