@@ -140,7 +140,10 @@ Redirect donor to Razorpay checkout
       "subscriptionId": "sub_XXXXXXX",
       "paymentId": "pay_XXXXXXX",
       "customerId": "cust_XXXXXXX",
-      "status": "active"
+      "status": "active",
+      "sheetSync": {
+        "skipped": false
+      }
     }
     ```
 
@@ -167,8 +170,29 @@ Redirect donor to Razorpay checkout
 ## Notes
 - This project is designed to support a reusable subscription flow for multiple donors via your WordPress page.
 - Donors can enter their own amount on the WordPress form, and the backend will create a matching Razorpay subscription plan if needed.
+- Successful subscription authorizations can be appended to Google Sheets when the Google service-account env vars are configured.
 - If you want to use Razorpay Payment Pages directly, the admin-only `/api/subscriptions/payment-page` endpoint can create a Razorpay payment page link.
 - For a real deployment, set up HTTPS and webhook handling for subscription events.
+
+## Google Sheets sync
+The `/api/subscriptions/verify` endpoint can append successful subscription authorizations to a Google Sheet.
+
+1. Create a Google Cloud service account and enable the Google Sheets API for that project.
+2. Create or choose a Google Sheet and add a tab named `Donations`.
+3. Share the Sheet with the service account email as an editor.
+4. Add this header row to `Donations!A:O`:
+   ```text
+   Recorded At | Subscription ID | Payment ID | Customer ID | Status | Plan ID | Name | Email | Phone | PAN | Amount Paise | Amount INR | Currency | Total Count | Razorpay Created At
+   ```
+5. Add these environment variables in Render:
+   ```env
+   GOOGLE_SHEETS_ID=your_google_sheet_id
+   GOOGLE_SHEETS_RANGE=Donations!A:O
+   GOOGLE_SERVICE_ACCOUNT_EMAIL=your-service-account@your-project.iam.gserviceaccount.com
+   GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nyour_private_key\n-----END PRIVATE KEY-----\n"
+   ```
+
+The Sheet ID is the long ID in the Google Sheet URL. Keep the private key quoted in Render and preserve `\n` line breaks.
 
 ## Elementor integration
 To embed the subscription form into your existing donate page with Elementor:
@@ -372,6 +396,10 @@ Render.com supports automatic deployment from GitHub with free HTTPS.
    - `MIN_DONATION_AMOUNT` - Minimum accepted donation amount in paise (default: 10000)
    - `MAX_DONATION_AMOUNT` - Maximum accepted donation amount in paise (default: 10000000)
    - `MAX_SUBSCRIPTION_TOTAL_COUNT` - Maximum billing cycles accepted from public requests (default: 120)
+   - Optional: `GOOGLE_SHEETS_ID` - Google Sheet ID for donation sync
+   - Optional: `GOOGLE_SHEETS_RANGE` - Sheet range for appending rows (default: `Donations!A:O`)
+   - Optional: `GOOGLE_SERVICE_ACCOUNT_EMAIL` - Google service account email shared on the Sheet
+   - Optional: `GOOGLE_PRIVATE_KEY` - Google service account private key
    - Optional: `RAZORPAY_PLAN_ID` - Reuse an existing Razorpay plan ID
 7. If Render asks for a start command, use:
    ```bash

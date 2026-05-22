@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
 const getRazorpayClient = require('../razorpayClient');
+const { appendDonationToSheet } = require('../googleSheetsClient');
 const router = express.Router();
 
 const {
@@ -368,6 +369,14 @@ router.post('/verify', async (req, res, next) => {
 
     const razorpay = getRazorpayClient();
     const subscription = await razorpay.subscriptions.fetch(subscriptionId);
+    let sheetSync = { skipped: true };
+
+    try {
+      sheetSync = await appendDonationToSheet({ subscription, paymentId });
+    } catch (sheetError) {
+      console.error('Google Sheets sync failed:', sheetError.response && sheetError.response.data ? sheetError.response.data : sheetError.message);
+      sheetSync = { skipped: false, error: 'Google Sheets sync failed.' };
+    }
 
     res.json({
       success: true,
@@ -375,6 +384,7 @@ router.post('/verify', async (req, res, next) => {
       paymentId,
       customerId: subscription.customer_id || null,
       status: subscription.status,
+      sheetSync,
     });
   } catch (error) {
     next(error);
