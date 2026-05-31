@@ -21,6 +21,7 @@ const {
 const DEFAULT_MIN_DONATION_AMOUNT = 10000;
 const DEFAULT_MAX_DONATION_AMOUNT = 10000000;
 const DEFAULT_MAX_TOTAL_COUNT = 120;
+const SUBSCRIPTION_CHANGE_ACTIONS = ['pause', 'resume', 'cancel'];
 
 function getNumberEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -125,6 +126,54 @@ function secureCompare(value, expected) {
   return crypto.timingSafeEqual(valueBuffer, expectedBuffer);
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function normalizePhone(contact) {
+  return String(contact || '').replace(/\D/g, '');
+}
+
+function phoneMatches(left, right) {
+  const normalizedLeft = normalizePhone(left);
+  const normalizedRight = normalizePhone(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  return normalizedLeft === normalizedRight
+    || (normalizedLeft.length >= 10 && normalizedRight.length >= 10 && normalizedLeft.slice(-10) === normalizedRight.slice(-10));
+}
+
+function getItems(response) {
+  return Array.isArray(response.items) ? response.items : response;
+}
+
+async function fetchAllFromRazorpay(fetchPage, maxItems = 1000) {
+  const allItems = [];
+  let skip = 0;
+  const count = 100;
+
+  while (allItems.length < maxItems) {
+    const response = await fetchPage({ count, skip });
+    const items = getItems(response);
+
+    if (!Array.isArray(items) || items.length === 0) {
+      break;
+    }
+
+    allItems.push(...items);
+    if (items.length < count) {
+      break;
+    }
+
+    skip += count;
+  }
+
+  return allItems.slice(0, maxItems);
+}
+
 async function findExistingPlan(razorpay, amount, currency, interval, intervalCount) {
   const response = await razorpay.plans.all({ count: 100, skip: 0 });
   const plans = Array.isArray(response.items) ? response.items : response;
@@ -140,6 +189,59 @@ async function findExistingPlan(razorpay, amount, currency, interval, intervalCo
       && String(plan.period || '').toLowerCase() === String(interval || '').toLowerCase()
       && Number(plan.interval) === Number(intervalCount);
   }) || null;
+}
+
+async function getMatchingCustomerIds(razorpay, { email, contact }) {
+  const normalizedEmail = normalizeEmail(email);
+  const customers = await fetchAllFromRazorpay((params) => razorpay.customers.all(params), 1000);
+
+  return customers
+    .filter((customer) => {
+      const emailMatch = normalizedEmail && normalizeEmail(customer.email) === normalizedEmail;
+      const phoneMatch = contact && phoneMatches(customer.contact, contact);
+      return emailMatch || phoneMatch;
+    })
+    .map((customer) => customer.id)
+    .filter(Boolean);
+}
+
+async function findSubscriptionsForDonor(razorpay, { email, contact }) {
+  const normalizedEmail = normalizeEmail(email);
+  const matchingCustomerIds = await getMatchingCustomerIds(razorpay, { email, contact });
+  const subscriptions = await fetchAllFromRazorpay((params) => razorpay.subscriptions.all(params), 1000);
+
+  return subscriptions
+    .filter((subscription) => {
+      const notes = subscription.notes || {};
+      const emailMatch = normalizedEmail && normalizeEmail(notes.donor_email) === normalizedEmail;
+      const phoneMatch = contact && phoneMatches(notes.donor_contact, contact);
+      const customerMatch = subscription.customer_id && matchingCustomerIds.includes(subscription.customer_id);
+      return emailMatch || phoneMatch || customerMatch;
+    })
+    .sort((left, right) => Number(right.created_at || 0) - Number(left.created_at || 0));
+}
+
+function getEligibleSubscription(subscriptions, action) {
+  const statusByAction = {
+    pause: ['active'],
+    resume: ['paused'],
+    cancel: ['active', 'authenticated', 'pending', 'halted'],
+  };
+  const allowedStatuses = statusByAction[action] || [];
+
+  return subscriptions.find((subscription) => allowedStatuses.includes(subscription.status));
+}
+
+async function changeSubscription(razorpay, subscriptionId, action) {
+  if (action === 'pause') {
+    return razorpay.subscriptions.pause(subscriptionId, { pause_at: 'now' });
+  }
+
+  if (action === 'resume') {
+    return razorpay.subscriptions.resume(subscriptionId, { resume_at: 'now' });
+  }
+
+  return razorpay.subscriptions.cancel(subscriptionId, 1);
 }
 
 async function findExistingCustomer(razorpay, customer) {
@@ -385,6 +487,56 @@ router.post('/verify', async (req, res, next) => {
       customerId: subscription.customer_id || null,
       status: subscription.status,
       sheetSync,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/change', async (req, res, next) => {
+  try {
+    const { email, contact, phone, action: requestedAction } = req.body;
+    const action = String(requestedAction || '').trim().toLowerCase();
+    const lookupEmail = normalizeEmail(email);
+    const lookupContact = String(contact || phone || '').trim();
+
+    if (!lookupEmail && !lookupContact) {
+      return res.status(400).json({ error: 'Email or phone is required.' });
+    }
+
+    if (!SUBSCRIPTION_CHANGE_ACTIONS.includes(action)) {
+      return res.status(400).json({ error: 'Action must be one of: pause, resume, cancel.' });
+    }
+
+    const razorpay = getRazorpayClient();
+    const subscriptions = await findSubscriptionsForDonor(razorpay, {
+      email: lookupEmail,
+      contact: lookupContact,
+    });
+
+    if (subscriptions.length === 0) {
+      return res.status(404).json({ error: 'No subscription found for the provided email or phone.' });
+    }
+
+    const subscription = getEligibleSubscription(subscriptions, action);
+    if (!subscription) {
+      const statuses = [...new Set(subscriptions.map((item) => item.status).filter(Boolean))].join(', ');
+      return res.status(409).json({
+        error: `No subscription is eligible to ${action}. Current matching subscription status: ${statuses || 'unknown'}.`,
+      });
+    }
+
+    const updatedSubscription = await changeSubscription(razorpay, subscription.id, action);
+
+    res.json({
+      success: true,
+      action,
+      subscriptionId: updatedSubscription.id || subscription.id,
+      status: updatedSubscription.status,
+      customerId: updatedSubscription.customer_id || subscription.customer_id || null,
+      message: action === 'cancel'
+        ? 'Subscription cancellation has been scheduled for the end of the current billing cycle.'
+        : `Subscription ${action} request completed successfully.`,
     });
   } catch (error) {
     next(error);

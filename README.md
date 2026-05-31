@@ -147,6 +147,33 @@ Redirect donor to Razorpay checkout
     }
     ```
 
+- `POST /api/subscriptions/change`
+  - Finds the donor's latest matching subscription by email or phone and pauses, resumes, or cancels it.
+  - Cancels are scheduled for the end of the current billing cycle by default.
+  - This is a public self-service endpoint; add OTP/email verification if stronger donor authentication is required.
+  - Body example:
+    ```json
+    {
+      "email": "asha@example.com",
+      "action": "cancel"
+    }
+    ```
+  - Supported actions:
+    ```text
+    pause, resume, cancel
+    ```
+  - Response:
+    ```json
+    {
+      "success": true,
+      "action": "cancel",
+      "subscriptionId": "sub_XXXXXXX",
+      "status": "active",
+      "customerId": "cust_XXXXXXX",
+      "message": "Subscription cancellation has been scheduled for the end of the current billing cycle."
+    }
+    ```
+
 - `POST /api/subscriptions/payment-page`
   - Attempts to create a reusable Razorpay payment page link for subscription donations.
   - Admin-only: requires `x-admin-token` to match `ADMIN_TOKEN`.
@@ -371,6 +398,101 @@ The form submits directly to `/api/subscriptions/create`, opens Razorpay Checkou
       console.error('Form submission error:', error);
       showDonationMessage('✗ Error: ' + error.message, 'error');
       setSubmitState(false);
+    }
+  });
+</script>
+```
+
+## Change subscription page
+Create a WordPress page with slug `changesubscription`, add an Elementor `HTML` widget, and paste this block.
+
+```html
+<div id="subscriptionChangeMessage" style="margin-bottom: 20px; padding: 12px; border-radius: 4px; display: none; font-weight: bold; text-align: center; border-left: 4px solid;"></div>
+
+<form id="subscriptionChangeForm" style="max-width: 500px; margin: 20px auto;">
+  <div style="margin-bottom: 15px;">
+    <label for="changeEmail" style="display: block; margin-bottom: 5px; font-weight: bold;">Email</label>
+    <input type="email" id="changeEmail" name="email" placeholder="you@example.com" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
+
+  <div style="margin-bottom: 15px;">
+    <label for="changePhone" style="display: block; margin-bottom: 5px; font-weight: bold;">Phone</label>
+    <input type="tel" id="changePhone" name="phone" placeholder="9123456780" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+  </div>
+
+  <div style="margin-bottom: 15px;">
+    <label for="changeAction" style="display: block; margin-bottom: 5px; font-weight: bold;">Action *</label>
+    <select id="changeAction" name="action" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+      <option value="">Select an action</option>
+      <option value="pause">Pause subscription</option>
+      <option value="resume">Resume subscription</option>
+      <option value="cancel">Cancel at end of current billing cycle</option>
+    </select>
+  </div>
+
+  <button id="subscriptionChangeButton" type="submit" style="width: 100%; padding: 12px; background-color: #eca30c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
+    Submit Request
+  </button>
+
+  <p style="margin-top: 12px; color: #333; font-size: 14px;">Enter either the email or phone number used when starting the monthly donation.</p>
+</form>
+
+<script>
+  const CHANGE_API_BASE_URL = 'https://ssf-monthly-donation-api.onrender.com';
+
+  function showSubscriptionChangeMessage(message, type) {
+    const messageBox = document.getElementById('subscriptionChangeMessage');
+    messageBox.textContent = message;
+    messageBox.style.backgroundColor = type === 'error' ? '#f8d7da' : '#d4edda';
+    messageBox.style.color = type === 'error' ? '#721c24' : '#155724';
+    messageBox.style.borderLeftColor = type === 'error' ? '#dc3545' : '#28a745';
+    messageBox.style.display = 'block';
+  }
+
+  function setSubscriptionChangeState(isSubmitting) {
+    const button = document.getElementById('subscriptionChangeButton');
+    button.disabled = isSubmitting;
+    button.textContent = isSubmitting ? 'Submitting...' : 'Submit Request';
+  }
+
+  document.getElementById('subscriptionChangeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const email = document.getElementById('changeEmail').value.trim().toLowerCase();
+    const phone = document.getElementById('changePhone').value.trim();
+    const action = document.getElementById('changeAction').value;
+
+    if (!email && !phone) {
+      showSubscriptionChangeMessage('✗ Please enter either email or phone.', 'error');
+      return;
+    }
+
+    setSubscriptionChangeState(true);
+
+    try {
+      const response = await fetch(CHANGE_API_BASE_URL + '/api/subscriptions/change', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          phone,
+          action,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Unable to update subscription.');
+      }
+
+      showSubscriptionChangeMessage('✓ ' + data.message, 'success');
+      document.getElementById('subscriptionChangeForm').reset();
+    } catch (error) {
+      showSubscriptionChangeMessage('✗ Error: ' + error.message, 'error');
+    } finally {
+      setSubscriptionChangeState(false);
     }
   });
 </script>
