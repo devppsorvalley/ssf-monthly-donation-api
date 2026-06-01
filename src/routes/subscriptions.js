@@ -18,15 +18,8 @@ const {
   SUBSCRIPTION_DESCRIPTION,
 } = process.env;
 
-const DEFAULT_MIN_DONATION_AMOUNT = 10000;
-const DEFAULT_MAX_DONATION_AMOUNT = 10000000;
 const DEFAULT_MAX_TOTAL_COUNT = 120;
 const SUBSCRIPTION_CHANGE_ACTIONS = ['pause', 'resume', 'cancel'];
-
-function getNumberEnv(name, fallback) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
 
 function getIntegerEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -47,38 +40,13 @@ function normalizeCustomer(customer) {
 }
 
 function validateDonationRequest({ customer, amount, totalCount, quantity }) {
-  const normalizedCustomer = normalizeCustomer(customer);
-  if (!normalizedCustomer || !normalizedCustomer.name || !normalizedCustomer.email || !normalizedCustomer.contact || !normalizedCustomer.pan) {
-    return { error: 'Customer data is required: name, email, contact, pan.' };
-  }
-
-  if (normalizedCustomer.name.length > 100) {
-    return { error: 'Name must be 100 characters or fewer.' };
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedCustomer.email)) {
-    return { error: 'A valid email address is required.' };
-  }
-
-  if (!/^\+?[0-9]{7,15}$/.test(normalizedCustomer.contact)) {
-    return { error: 'A valid phone number is required.' };
-  }
-
-  if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(normalizedCustomer.pan)) {
-    return { error: 'A valid PAN is required.' };
-  }
-
+  const normalizedCustomer = normalizeCustomer(customer) || {
+    name: '',
+    email: '',
+    contact: '',
+    pan: '',
+  };
   const requestedAmount = Number(amount);
-  const minAmount = getNumberEnv('MIN_DONATION_AMOUNT', DEFAULT_MIN_DONATION_AMOUNT);
-  const maxAmount = getNumberEnv('MAX_DONATION_AMOUNT', DEFAULT_MAX_DONATION_AMOUNT);
-
-  if (!Number.isInteger(requestedAmount)) {
-    return { error: 'Amount must be an integer value in paise.' };
-  }
-
-  if (requestedAmount < minAmount || requestedAmount > maxAmount) {
-    return { error: `Amount must be between ${minAmount} and ${maxAmount} paise.` };
-  }
 
   const requestedQuantity = Number(quantity);
   if (!Number.isInteger(requestedQuantity) || requestedQuantity !== 1) {
