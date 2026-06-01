@@ -288,6 +288,7 @@ The form validates donor inputs in the browser, submits directly to `/api/subscr
     Start Monthly Donation
   </button>
   <p style="margin-top: 12px; color: #333; font-size: 14px;">Razorpay Checkout will open securely to complete the subscription.</p>
+  <p style="margin-top: 12px; color: #333; font-size: 14px;">You can pause, resume, and cancel your subscription at anytime by clicking <a href="https://seemantsewafoundation.org/pause-resume-or-cancel-monthly-subscription">here</a>.</p>
 </form>
 
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
